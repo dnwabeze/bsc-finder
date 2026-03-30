@@ -93,21 +93,24 @@ async function handleMetadataAccount(
       return;
     }
 
+    console.log(`[Metaplex] ✅ ${preToken.symbol} matched — fetching supply...`);
+
     // ── Passed filter — now fetch supply, signature, off-chain metadata ──────
-    let supplyInfo;
+    let decimals = 9; // safe default — won't misidentify as NFT
+    let supply   = BigInt(0);
     try {
-      supplyInfo = await rateLimit(() =>
+      const supplyInfo = await rateLimit(() =>
         connection.getTokenSupply(new PublicKey(mint), 'confirmed')
       );
-    } catch {
-      return; // mint not ready yet — skip
+      decimals = supplyInfo.value.decimals;
+      supply   = BigInt(supplyInfo.value.amount);
+    } catch (err: any) {
+      console.log(`[Metaplex] ⚠️ Supply fetch failed for ${preToken.symbol} (${mint.slice(0,8)}…): ${err?.message} — continuing anyway`);
     }
-
-    const decimals = supplyInfo.value.decimals;
-    const supply   = BigInt(supplyInfo.value.amount);
 
     // Skip NFTs: decimals=0 and supply=1
     if (decimals === 0 && supply === BigInt(1)) {
+      console.log(`[Metaplex] Skipped NFT: ${preToken.symbol}`);
       return;
     }
 
@@ -159,7 +162,11 @@ async function handleMetadataAccount(
 
     // Claim the mint before awaiting sendTokenAlert — prevents duplicate alerts
     // if Traditional monitor also detects this token concurrently
-    if (!addToWatchlist(token)) return;
+    if (!addToWatchlist(token)) {
+      console.log(`[Metaplex] ${token.symbol} already claimed by another monitor — skipping`);
+      return;
+    }
+    console.log(`[Metaplex] Sending alert for ${token.symbol} (${mint})`);
     await sendTokenAlert(token);
 
   } catch (err: any) {
