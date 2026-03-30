@@ -30,7 +30,7 @@ export function passesFilters(token: TokenInfo): boolean {
   const symbolLC = (token.symbol || '').toLowerCase().replace(/\$/g, '');
   const nameMatches = filters.nameKeywords.length > 0 &&
     filters.nameKeywords.some(kw => {
-      const kwClean = kw.replace(/\$/g, '');
+      const kwClean = kw.toLowerCase().replace(/\$/g, '');
       // Symbol: exact match only (so "stc" won't match "testcoin" or "breastcoin")
       const symbolMatch = symbolLC === kwClean;
       // Name: contains match (so "save the child" matches "save the child token")
