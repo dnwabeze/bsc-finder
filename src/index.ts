@@ -21,6 +21,7 @@ import { startTraditionalMonitor } from './monitors/traditional';
 import { startRaydiumMonitor }    from './monitors/raydium';
 import { startLaunchpadMonitors } from './monitors/launchpads';
 import { startDistributionMonitor } from './watchlist/distributionMonitor';
+import { startMetaplexMonitor }     from './monitors/metaplex';
 
 async function main() {
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
@@ -43,6 +44,9 @@ async function main() {
   if (config.monitors.traditional) startTraditionalMonitor(connection);
   if (config.monitors.raydium)     startRaydiumMonitor(connection);
   if (config.monitors.launchpads)  startLaunchpadMonitors(connection);
+
+  // ── Metaplex monitor — catches all tokens with metadata regardless of platform
+  startMetaplexMonitor(connection);
 
   // ── Distribution monitor (Stage 2 + 3) ─────────────────────────────────────
   startDistributionMonitor(connection);

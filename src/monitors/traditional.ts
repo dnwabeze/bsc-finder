@@ -18,8 +18,16 @@ const TOKEN_2022_ID    = new PublicKey(PROGRAMS.TOKEN_2022_PROGRAM);
 // Track seen mints so we don't re-process the same mint if it's updated later
 const seenMints = new Set<string>();
 
-// Base58 encoding of a single byte 0x01 — used for the is_initialized memcmp filter
-const IS_INITIALIZED_B58 = '2'; // base58(Buffer.from([1])) === '2'
+// SPL Token mint layout (82 bytes):
+//   0-35:  mint_authority (COption<Pubkey>)
+//   36-43: supply (u64)
+//   44:    decimals (u8)   ← NOT is_initialized
+//   45:    is_initialized (bool)
+//   46-81: freeze_authority (COption<Pubkey>)
+const MINT_IS_INITIALIZED_OFFSET = 45;
+
+// base58(Buffer.from([1])) === '2' — used for memcmp RPC filter
+const IS_INITIALIZED_B58 = '2';
 
 export function startTraditionalMonitor(connection: Connection): void {
   console.log('[Traditional] Starting SPL Token monitor...');
@@ -46,7 +54,7 @@ function subscribeBySize(
     programId,
     async (keyedAccountInfo: KeyedAccountInfo) => {
       const data = keyedAccountInfo.accountInfo.data;
-      if (data[44] !== 1) return; // is_initialized must be true
+      if (data[MINT_IS_INITIALIZED_OFFSET] !== 1) return; // is_initialized must be true
       await handleMintAccount(connection, keyedAccountInfo, label);
     },
     'confirmed',
@@ -71,7 +79,7 @@ function subscribeByInitialized(
       await handleMintAccount(connection, keyedAccountInfo, label);
     },
     'confirmed',
-    [{ memcmp: { offset: 44, bytes: IS_INITIALIZED_B58 } }],
+    [{ memcmp: { offset: MINT_IS_INITIALIZED_OFFSET, bytes: IS_INITIALIZED_B58 } }],
   );
   console.log(`[Traditional] Subscribed to ${label} (extended mints, subId=${subId})`);
 }
