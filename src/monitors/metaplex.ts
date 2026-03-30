@@ -73,7 +73,23 @@ async function handleMetadataAccount(
 
     console.log(`[Metaplex] New metadata: ${parsed.symbol || '?'} | ${mint}`);
 
-    // Fetch supply to check decimals and filter out NFTs (decimals=0, supply=1)
+    // ── Early filter check ───────────────────────────────────────────────────
+    // Run a pre-check using on-chain name/symbol BEFORE making any RPC calls.
+    // This avoids wasting supply/signature fetches on tokens that won't match.
+    const preToken: TokenInfo = {
+      mint,
+      name:      parsed.name   || 'Unknown',
+      symbol:    parsed.symbol || 'Unknown',
+      source:    'traditional',
+      signature: '',
+      timestamp: Date.now(),
+    };
+    if (!passesFilters(preToken)) {
+      console.log(`[Metaplex] Filtered out: ${preToken.symbol}`);
+      return;
+    }
+
+    // ── Passed filter — now fetch supply, signature, off-chain metadata ──────
     let supplyInfo;
     try {
       supplyInfo = await rateLimit(() =>
@@ -135,11 +151,6 @@ async function handleMetadataAccount(
         if (token.metadata.name)   token.name   = token.metadata.name;
         if (token.metadata.symbol) token.symbol = token.metadata.symbol;
       } catch { /* non-fatal */ }
-    }
-
-    if (!passesFilters(token)) {
-      console.log(`[Metaplex] Filtered out: ${token.symbol}`);
-      return;
     }
 
     // Claim the mint before awaiting sendTokenAlert — prevents duplicate alerts

@@ -137,44 +137,40 @@ async function processMint(
       }
     } catch { /* non-fatal — proceed without signature/creator */ }
 
-    const token: TokenInfo = {
-      mint,
-      name: 'Unknown',
-      symbol: 'Unknown',
-      source: 'traditional',
-      creator,
-      signature,
-      timestamp: Date.now(),
+    // Try metadata once — no retry loop.
+    // The Metaplex monitor handles tokens WITH metadata faster and more reliably.
+    // Traditional is the fallback for tokens WITHOUT Metaplex metadata (raw mints).
+    const onchain = await fetchMetaplexMetadataForMint(connection, mint);
+    let name   = 'Unknown';
+    let symbol = 'Unknown';
+    let uri    = '';
+    if (onchain) {
+      name   = onchain.name   || name;
+      symbol = onchain.symbol || symbol;
+      uri    = onchain.uri    || uri;
+    }
+
+    // ── Early filter check — skip expensive RPC calls for non-matching tokens ─
+    const preToken: TokenInfo = {
+      mint, name, symbol, source: 'traditional', creator, signature, timestamp: Date.now(),
     };
+    if (!passesFilters(preToken)) {
+      console.log(`[Traditional] Filtered out: ${symbol}`);
+      return;
+    }
 
-    // Retry metadata fetch up to 3 times with a delay.
-    // Metaplex metadata is often in a separate transaction that confirms
-    // slightly after the mint — without retries the name stays "Unknown"
-    // and gets dropped by name keyword filters.
-    for (let attempt = 0; attempt < 3; attempt++) {
-      if (attempt > 0) await new Promise(r => setTimeout(r, 4000));
+    // ── Passed — build full token and fetch remaining data ───────────────────
+    const token: TokenInfo = { ...preToken };
 
-      const onchain = await fetchMetaplexMetadataForMint(connection, mint);
-      if (onchain) {
-        token.name   = onchain.name   || token.name;
-        token.symbol = onchain.symbol || token.symbol;
-        if (onchain.uri) {
-          token.metadata = await fetchMetadata(onchain.uri);
-          if (token.metadata.name)   token.name   = token.metadata.name;
-          if (token.metadata.symbol) token.symbol = token.metadata.symbol;
-        }
-      }
-
-      // Stop retrying once we have a real name
-      if (token.name !== 'Unknown' && token.name !== '') break;
+    if (uri) {
+      try {
+        token.metadata = await fetchMetadata(uri);
+        if (token.metadata.name)   token.name   = token.metadata.name;
+        if (token.metadata.symbol) token.symbol = token.metadata.symbol;
+      } catch { /* non-fatal */ }
     }
 
     await enrichWithSupply(connection, token);
-
-    if (!passesFilters(token)) {
-      console.log(`[Traditional] Filtered out: ${token.symbol}`);
-      return;
-    }
 
     if (!addToWatchlist(token)) return; // Metaplex monitor already claimed this token
     await sendTokenAlert(token);
