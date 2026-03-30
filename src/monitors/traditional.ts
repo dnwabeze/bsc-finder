@@ -139,15 +139,26 @@ async function processMint(
       timestamp: Date.now(),
     };
 
-    const onchain = await fetchMetaplexMetadataForMint(connection, mint);
-    if (onchain) {
-      token.name   = onchain.name   || token.name;
-      token.symbol = onchain.symbol || token.symbol;
-      if (onchain.uri) {
-        token.metadata = await fetchMetadata(onchain.uri);
-        if (token.metadata.name)   token.name   = token.metadata.name;
-        if (token.metadata.symbol) token.symbol = token.metadata.symbol;
+    // Retry metadata fetch up to 3 times with a delay.
+    // Metaplex metadata is often in a separate transaction that confirms
+    // slightly after the mint — without retries the name stays "Unknown"
+    // and gets dropped by name keyword filters.
+    for (let attempt = 0; attempt < 3; attempt++) {
+      if (attempt > 0) await new Promise(r => setTimeout(r, 4000));
+
+      const onchain = await fetchMetaplexMetadataForMint(connection, mint);
+      if (onchain) {
+        token.name   = onchain.name   || token.name;
+        token.symbol = onchain.symbol || token.symbol;
+        if (onchain.uri) {
+          token.metadata = await fetchMetadata(onchain.uri);
+          if (token.metadata.name)   token.name   = token.metadata.name;
+          if (token.metadata.symbol) token.symbol = token.metadata.symbol;
+        }
       }
+
+      // Stop retrying once we have a real name
+      if (token.name !== 'Unknown' && token.name !== '') break;
     }
 
     await enrichWithSupply(connection, token);
