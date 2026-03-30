@@ -1,7 +1,7 @@
 import {
   Connection,
   PublicKey,
-  VersionedTransactionResponse,
+  KeyedAccountInfo,
 } from '@solana/web3.js';
 import { PROGRAMS } from '../config';
 import { fetchMetadata } from '../parsers/metadata';
@@ -14,74 +14,132 @@ import { fetchMetaplexMetadataForMint } from './metaplexHelper';
 
 const TOKEN_PROGRAM_ID = new PublicKey(PROGRAMS.TOKEN_PROGRAM);
 const TOKEN_2022_ID    = new PublicKey(PROGRAMS.TOKEN_2022_PROGRAM);
-const processedSignatures = new Set<string>();
+
+// Track seen mints so we don't re-process the same mint if it's updated later
+const seenMints = new Set<string>();
+
+// Base58 encoding of a single byte 0x01 — used for the is_initialized memcmp filter
+const IS_INITIALIZED_B58 = '2'; // base58(Buffer.from([1])) === '2'
 
 export function startTraditionalMonitor(connection: Connection): void {
   console.log('[Traditional] Starting SPL Token monitor...');
-  subscribeToProgram(connection, TOKEN_PROGRAM_ID, 'SPL Token',   PROGRAMS.TOKEN_PROGRAM);
-  subscribeToProgram(connection, TOKEN_2022_ID,    'Token-2022', PROGRAMS.TOKEN_2022_PROGRAM);
+
+  // SPL Token: all mints are exactly 82 bytes
+  subscribeBySize(connection, TOKEN_PROGRAM_ID, 'SPL Token', 82);
+
+  // Token-2022 without extensions: 82 bytes
+  subscribeBySize(connection, TOKEN_2022_ID, 'Token-2022', 82);
+
+  // Token-2022 WITH extensions: size > 82 bytes — use is_initialized memcmp instead.
+  // Token accounts are 165+ bytes; this subscription also catches those, so we
+  // guard against them below by checking that size < 165 or by the seenMints set.
+  subscribeByInitialized(connection, TOKEN_2022_ID, 'Token-2022 (extended)');
 }
 
-function subscribeToProgram(
+function subscribeBySize(
   connection: Connection,
   programId: PublicKey,
   label: string,
-  programIdStr: string
+  dataSize: number,
 ): void {
-  const subId = connection.onLogs(
+  const subId = connection.onProgramAccountChange(
     programId,
-    async (logs) => {
-      if (logs.err) return;
-      // Pre-filter: only fetch full tx if logs mention a mint creation instruction
-      // Covers all variants across SPL Token and Token-2022
-      const isInitMint = logs.logs.some(l =>
-        l.includes('InitializeMint') ||
-        l.includes('InitializeMint2') ||
-        l.includes('InitializeNonTransferableMint')
-      );
-      if (!isInitMint) return;
-      await processSignature(connection, logs.signature, programIdStr);
+    async (keyedAccountInfo: KeyedAccountInfo) => {
+      const data = keyedAccountInfo.accountInfo.data;
+      if (data[44] !== 1) return; // is_initialized must be true
+      await handleMintAccount(connection, keyedAccountInfo, label);
     },
-    'confirmed'
+    'confirmed',
+    [{ dataSize }],
   );
-  console.log(`[Traditional] Subscribed to ${label} (subId=${subId})`);
+  console.log(`[Traditional] Subscribed to ${label} (${dataSize}B mints, subId=${subId})`);
 }
 
-async function processSignature(
+function subscribeByInitialized(
   connection: Connection,
-  signature: string,
-  programId: string
+  programId: PublicKey,
+  label: string,
+): void {
+  // Catches Token-2022 mints that have extensions and are therefore > 82 bytes.
+  // Filter: is_initialized byte (offset 44) === 1, AND skip 82-byte accounts
+  // (already covered by subscribeBySize) and 165-byte token accounts.
+  const subId = connection.onProgramAccountChange(
+    programId,
+    async (keyedAccountInfo: KeyedAccountInfo) => {
+      const size = keyedAccountInfo.accountInfo.data.length;
+      if (size === 82 || size === 165) return; // handled elsewhere or token account
+      await handleMintAccount(connection, keyedAccountInfo, label);
+    },
+    'confirmed',
+    [{ memcmp: { offset: 44, bytes: IS_INITIALIZED_B58 } }],
+  );
+  console.log(`[Traditional] Subscribed to ${label} (extended mints, subId=${subId})`);
+}
+
+async function handleMintAccount(
+  connection: Connection,
+  keyedAccountInfo: KeyedAccountInfo,
+  label: string,
 ): Promise<void> {
-  if (processedSignatures.has(signature)) return;
-  processedSignatures.add(signature);
-  if (processedSignatures.size > 10000) {
-    const first = processedSignatures.values().next().value;
-    if (first) processedSignatures.delete(first);
+  const mint = keyedAccountInfo.accountId.toBase58();
+
+  // Skip mints we've already processed (e.g. subsequent setAuthority calls)
+  if (seenMints.has(mint)) return;
+  seenMints.add(mint);
+  if (seenMints.size > 50000) {
+    const first = seenMints.values().next().value;
+    if (first) seenMints.delete(first);
   }
 
+  await processMint(connection, mint, label);
+}
+
+async function processMint(
+  connection: Connection,
+  mint: string,
+  label: string,
+): Promise<void> {
   try {
-    const tx = await rateLimit(() => connection.getTransaction(signature, {
-      maxSupportedTransactionVersion: 0,
-      commitment: 'confirmed',
-    }));
-    if (!tx) return;
+    console.log(`[Traditional] New mint detected: ${mint}`);
 
-    const mintInfo = extractInitializeMint(tx, programId);
-    if (!mintInfo) return;
+    // Get creation signature and creator from the first tx for this mint
+    let signature = '';
+    let creator: string | undefined;
 
-    console.log(`[Traditional] New mint: ${mintInfo.mint}`);
+    try {
+      const sigs = await rateLimit(() =>
+        connection.getSignaturesForAddress(new PublicKey(mint), { limit: 1 }, 'confirmed')
+      );
+      if (sigs.length > 0) {
+        signature = sigs[0].signature;
+        // Fetch tx only to extract the fee-payer (creator)
+        const tx = await rateLimit(() => connection.getTransaction(signature, {
+          maxSupportedTransactionVersion: 0,
+          commitment: 'confirmed',
+        }));
+        if (tx) {
+          const msg = tx.transaction.message;
+          if ('staticAccountKeys' in msg) {
+            creator = msg.staticAccountKeys[0]?.toBase58();
+          } else {
+            const keys = (msg as any).accountKeys;
+            creator = keys?.[0]?.toBase58?.() ?? keys?.[0];
+          }
+        }
+      }
+    } catch { /* non-fatal — proceed without signature/creator */ }
 
     const token: TokenInfo = {
-      mint: mintInfo.mint,
+      mint,
       name: 'Unknown',
       symbol: 'Unknown',
       source: 'traditional',
-      creator: mintInfo.creator,
+      creator,
       signature,
       timestamp: Date.now(),
     };
 
-    const onchain = await fetchMetaplexMetadataForMint(connection, mintInfo.mint);
+    const onchain = await fetchMetaplexMetadataForMint(connection, mint);
     if (onchain) {
       token.name   = onchain.name   || token.name;
       token.symbol = onchain.symbol || token.symbol;
@@ -103,52 +161,6 @@ async function processSignature(
     addToWatchlist(token);
 
   } catch (err: any) {
-    console.error('[Traditional] Error:', err?.message);
-  }
-}
-
-interface MintInfo { mint: string; creator?: string; }
-
-function extractInitializeMint(
-  tx: VersionedTransactionResponse,
-  programId: string
-): MintInfo | null {
-  try {
-    const msg = tx.transaction.message;
-    const accounts: string[] = [];
-
-    if ('staticAccountKeys' in msg) {
-      msg.staticAccountKeys.forEach(k => accounts.push(k.toBase58()));
-    } else if ('accountKeys' in msg) {
-      (msg as any).accountKeys.forEach((k: any) =>
-        accounts.push(k.toBase58 ? k.toBase58() : k)
-      );
-    }
-    if (tx.meta?.loadedAddresses) {
-      tx.meta.loadedAddresses.writable.forEach(k => accounts.push(k.toBase58()));
-      tx.meta.loadedAddresses.readonly.forEach(k => accounts.push(k.toBase58()));
-    }
-
-    const instructions = msg.compiledInstructions || (msg as any).instructions || [];
-    for (const ix of instructions) {
-      const prog = accounts[ix.programIdIndex];
-      if (prog !== programId) continue;
-
-      const data: Buffer = Buffer.from(ix.data);
-      if (data.length === 0) continue;
-      // 0 = InitializeMint, 20 = InitializeMint2, 40 = InitializeNonTransferableMint (Token-2022)
-      if (data[0] !== 0 && data[0] !== 20 && data[0] !== 40) continue;
-
-      const ixAccounts = (ix.accountKeyIndexes || ix.accounts || []).map(
-        (idx: number) => accounts[idx]
-      );
-      const mint    = ixAccounts[0];
-      const creator = accounts[0];
-      if (!mint) return null;
-      return { mint, creator };
-    }
-    return null;
-  } catch {
-    return null;
+    console.error('[Traditional] Error processing mint:', err?.message);
   }
 }
