@@ -110,10 +110,32 @@ async function processMint(
   try {
     console.log(`[Traditional] New mint detected: ${mint}`);
 
-    // Get creation signature and creator — direct RPC call, no queue
+    // ── Step 1: fetch on-chain metadata (rate-limited) ───────────────────────
+    // This is the ONLY RPC call made before the filter check.
+    // Signature/transaction/supply fetches are deferred to after the filter
+    // so we don't waste RPC quota on tokens that will be dropped.
+    const onchain = await rateLimit(() => fetchMetaplexMetadataForMint(connection, mint));
+    let name   = 'Unknown';
+    let symbol = 'Unknown';
+    let uri    = '';
+    if (onchain) {
+      name   = onchain.name   || name;
+      symbol = onchain.symbol || symbol;
+      uri    = onchain.uri    || uri;
+    }
+
+    // ── Step 2: filter check — drop non-matching tokens before any more RPC ──
+    const preToken: TokenInfo = {
+      mint, name, symbol, source: 'traditional', signature: '', timestamp: Date.now(),
+    };
+    if (!passesFilters(preToken)) {
+      console.log(`[Traditional] Filtered out: ${symbol}`);
+      return;
+    }
+
+    // ── Step 3: matched — now do the expensive fetches (direct, no queue) ────
     let signature = '';
     let creator: string | undefined;
-
     try {
       const sigs = await connection.getSignaturesForAddress(new PublicKey(mint), { limit: 1 }, 'confirmed');
       if (sigs.length > 0) {
@@ -134,30 +156,7 @@ async function processMint(
       }
     } catch { /* non-fatal — proceed without signature/creator */ }
 
-    // Try metadata once — no retry loop.
-    // The Metaplex monitor handles tokens WITH metadata faster and more reliably.
-    // Traditional is the fallback for tokens WITHOUT Metaplex metadata (raw mints).
-    const onchain = await fetchMetaplexMetadataForMint(connection, mint);
-    let name   = 'Unknown';
-    let symbol = 'Unknown';
-    let uri    = '';
-    if (onchain) {
-      name   = onchain.name   || name;
-      symbol = onchain.symbol || symbol;
-      uri    = onchain.uri    || uri;
-    }
-
-    // ── Early filter check — skip expensive RPC calls for non-matching tokens ─
-    const preToken: TokenInfo = {
-      mint, name, symbol, source: 'traditional', creator, signature, timestamp: Date.now(),
-    };
-    if (!passesFilters(preToken)) {
-      console.log(`[Traditional] Filtered out: ${symbol}`);
-      return;
-    }
-
-    // ── Passed — build full token and fetch remaining data ───────────────────
-    const token: TokenInfo = { ...preToken };
+    const token: TokenInfo = { ...preToken, creator, signature };
 
     if (uri) {
       try {
