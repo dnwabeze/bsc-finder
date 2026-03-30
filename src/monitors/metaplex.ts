@@ -59,6 +59,14 @@ async function handleMetadataAccount(
     // Extract mint address from account data
     const mint = new PublicKey(data.slice(MINT_OFFSET, MINT_OFFSET + 32)).toBase58();
 
+    // Parse name, symbol, uri directly from account data — no extra RPC call needed
+    const parsed = parseStrings(data, 65);
+    if (!parsed) return;
+
+    // If name AND symbol are both empty, the account was allocated but not yet written.
+    // Don't deduplicate yet — the next event will carry the actual data.
+    if (!parsed.name && !parsed.symbol) return;
+
     // Deduplicate — skip if already processed or alerted via another monitor
     if (seenMints.has(mint)) return;
     seenMints.add(mint);
@@ -66,10 +74,6 @@ async function handleMetadataAccount(
       const first = seenMints.values().next().value;
       if (first) seenMints.delete(first);
     }
-
-    // Parse name, symbol, uri directly from account data — no extra RPC call needed
-    const parsed = parseStrings(data, 65);
-    if (!parsed) return;
 
     console.log(`[Metaplex] New metadata: ${parsed.symbol || '?'} | ${mint}`);
 
