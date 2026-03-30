@@ -22,13 +22,21 @@ import { sendVestingAlert } from '../notifiers/telegram';
 
 // Known vesting program IDs — always watched
 const BUILTIN_VESTING_PROGRAMS = [
-  'strmRqUCoQUgGUan5YhzUZa6KqdzwX5L6FpUxfmKg5m', // Streamflow Finance
-  'HqDGZeco9pJE83ozoeLHHRtWkHCWRDVnHFpuJMNWMH7q', // Streamflow v2
+  'strmRqUCoQUgGUan5YhzUZa6KqdzwX5L6FpUxfmKg5m', // Streamflow Finance (vesting/stream)
+  'MErKy6nZVoVAkryxAejJz2juifQ4ArgLgHmaJCQkU7N', // Streamflow Distributor (airdrops)
+  'CChTq6PthWU82YZkbveA3WDf7s97BWhBK4Vx9bmsT743', // Bonfida Token Vesting
+  'LocpQgucEQHbqNABEYvBvwoxCPsSbG91A1QaQhQQqjn', // Jupiter Lock
+  'SMPLecH534NA9acpos4G6x7uf3LWbCAwZQE9e8ZekMu',  // Squads v3 (multisig)
+  'SQDS4ep65T869zMMBKyuUq6aD6EgTu8psMjkvj52pCf',  // Squads v4 (multisig)
 ];
 
 export const VESTING_PROGRAM_NAMES: Record<string, string> = {
   'strmRqUCoQUgGUan5YhzUZa6KqdzwX5L6FpUxfmKg5m': 'Streamflow Finance',
-  'HqDGZeco9pJE83ozoeLHHRtWkHCWRDVnHFpuJMNWMH7q': 'Streamflow v2',
+  'MErKy6nZVoVAkryxAejJz2juifQ4ArgLgHmaJCQkU7N': 'Streamflow Distributor',
+  'CChTq6PthWU82YZkbveA3WDf7s97BWhBK4Vx9bmsT743': 'Bonfida Token Vesting',
+  'LocpQgucEQHbqNABEYvBvwoxCPsSbG91A1QaQhQQqjn': 'Jupiter Lock',
+  'SMPLecH534NA9acpos4G6x7uf3LWbCAwZQE9e8ZekMu':  'Squads v3',
+  'SQDS4ep65T869zMMBKyuUq6aD6EgTu8psMjkvj52pCf':  'Squads v4',
 };
 
 const seen = new Set<string>();
