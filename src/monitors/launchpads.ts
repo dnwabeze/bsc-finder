@@ -133,8 +133,8 @@ async function processLaunchpadSignature(
         continue;
       }
 
+      if (!addToWatchlist(token)) continue;
       await sendTokenAlert(token);
-      addToWatchlist(token);
     }
   } catch (err: any) {
     console.error(`[${label}] Error:`, err?.message);

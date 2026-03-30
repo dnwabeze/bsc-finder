@@ -106,8 +106,8 @@ async function handleNewToken(connection: Connection, event: any): Promise<void>
       return;
     }
 
+    if (!addToWatchlist(token)) return;
     await sendTokenAlert(token);
-    addToWatchlist(token);
 
   } catch (err: any) {
     console.error('[Pump.fun] Error handling token:', err?.message);

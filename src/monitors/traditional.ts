@@ -176,8 +176,8 @@ async function processMint(
       return;
     }
 
+    if (!addToWatchlist(token)) return; // Metaplex monitor already claimed this token
     await sendTokenAlert(token);
-    addToWatchlist(token);
 
   } catch (err: any) {
     console.error('[Traditional] Error processing mint:', err?.message);

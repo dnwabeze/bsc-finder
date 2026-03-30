@@ -19,9 +19,14 @@ export interface WatchedToken {
 
 const watchlist = new Map<string, WatchedToken>();
 
-/** Add a token to the watchlist after Stage 1 fires. */
-export function addToWatchlist(token: TokenInfo): void {
-  if (watchlist.has(token.mint)) return;
+/**
+ * Add a token to the watchlist after Stage 1 fires.
+ * Returns true if newly added, false if already present.
+ * Use the return value to guard sendTokenAlert — prevents duplicate
+ * alerts when multiple monitors (Traditional + Metaplex) detect the same mint.
+ */
+export function addToWatchlist(token: TokenInfo): boolean {
+  if (watchlist.has(token.mint)) return false;
   watchlist.set(token.mint, {
     token,
     addedAt: Date.now(),
@@ -31,6 +36,7 @@ export function addToWatchlist(token: TokenInfo): void {
     stage3Sent: false,
   });
   console.log(`[Watchlist] Tracking ${token.symbol} (${token.mint}) — ${watchlist.size} total`);
+  return true;
 }
 
 export function getWatched(): WatchedToken[] {

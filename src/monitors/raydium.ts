@@ -91,8 +91,8 @@ async function processSignature(connection: Connection, signature: string): Prom
       return;
     }
 
+    if (!addToWatchlist(token)) return;
     await sendTokenAlert(token);
-    addToWatchlist(token);
 
   } catch (err: any) {
     console.error('[Raydium] Error:', err?.message);

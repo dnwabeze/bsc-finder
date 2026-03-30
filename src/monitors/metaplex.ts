@@ -142,8 +142,10 @@ async function handleMetadataAccount(
       return;
     }
 
+    // Claim the mint before awaiting sendTokenAlert — prevents duplicate alerts
+    // if Traditional monitor also detects this token concurrently
+    if (!addToWatchlist(token)) return;
     await sendTokenAlert(token);
-    addToWatchlist(token);
 
   } catch (err: any) {
     console.error('[Metaplex] Error:', err?.message);
