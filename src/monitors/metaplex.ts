@@ -63,9 +63,9 @@ async function handleMetadataAccount(
     const parsed = parseStrings(data, 65);
     if (!parsed) return;
 
-    // If name AND symbol are both empty, the account was allocated but not yet written.
-    // Don't deduplicate yet — the next event will carry the actual data.
-    if (!parsed.name && !parsed.symbol) return;
+    // If name OR symbol is missing the account may be partially written.
+    // Don't deduplicate yet — the next event will carry the complete data.
+    if (!parsed.name || !parsed.symbol) return;
 
     // Deduplicate — skip if already processed or alerted via another monitor
     if (seenMints.has(mint)) return;
@@ -75,7 +75,7 @@ async function handleMetadataAccount(
       if (first) seenMints.delete(first);
     }
 
-    console.log(`[Metaplex] New metadata: ${parsed.symbol || '?'} | ${mint}`);
+    console.log(`[Metaplex] New metadata: ${parsed.symbol} (${parsed.name}) | ${mint}`);
 
     // ── Early filter check ───────────────────────────────────────────────────
     // Run a pre-check using on-chain name/symbol BEFORE making any RPC calls.
