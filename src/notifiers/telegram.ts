@@ -124,6 +124,62 @@ export async function sendPatternMatchAlert(
   await send(msg);
 }
 
+// ── Discord CA Detected ───────────────────────────────────────────────────────
+export async function sendDiscordCaAlert(
+  address: string,
+  author: string,
+  messagePreview: string,
+  channelName: string,
+): Promise<void> {
+  if (!bot) return;
+
+  const msg = [
+    `🚨 *DISCORD CA DETECTED*`,
+    ``,
+    `📍 *Address:* \`${address}\``,
+    `👤 *Posted by:* ${esc(author)}`,
+    `📢 *Channel:* #${esc(channelName)}`,
+    ``,
+    `💬 *Message:*`,
+    `_${esc(messagePreview)}_`,
+    ``,
+    `🔗 [Solscan](https://solscan.io/token/${address})  |  [Dexscreener](https://dexscreener.com/solana/${address})  |  [Birdeye](https://birdeye.so/token/${address})`,
+    ``,
+    `⚡ _Discord drops first — act fast_`,
+  ].join('\n');
+
+  await send(msg);
+}
+
+// ── Vesting Contract Detected ─────────────────────────────────────────────────
+export async function sendVestingAlert(
+  mint: string,
+  signature: string,
+  supplyHuman: number,
+  decimals: number,
+  platformName: string,
+): Promise<void> {
+  if (!bot) return;
+
+  const supplyStr = formatSupply(BigInt(Math.round(supplyHuman * Math.pow(10, decimals))), decimals);
+
+  const msg = [
+    `🔒 *VESTING CONTRACT DETECTED*`,
+    ``,
+    `📍 *Mint:* \`${mint}\``,
+    `💰 *Supply:* ${supplyStr}`,
+    `🏦 *Platform:* ${esc(platformName)}`,
+    ``,
+    `🔗 [Solscan](https://solscan.io/token/${mint})  |  [Dexscreener](https://dexscreener.com/solana/${mint})  |  [Birdeye](https://birdeye.so/token/${mint})`,
+    ``,
+    `📋 [Tx: ${signature.slice(0, 16)}…](https://solscan.io/tx/${signature})`,
+    ``,
+    `⚡ _Team tokens being locked — launch is imminent_`,
+  ].join('\n');
+
+  await send(msg);
+}
+
 // ── Status ────────────────────────────────────────────────────────────────────
 export async function sendStatusMessage(text: string): Promise<void> {
   if (!bot) return;

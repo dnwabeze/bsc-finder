@@ -22,6 +22,8 @@ import { startRaydiumMonitor }    from './monitors/raydium';
 import { startLaunchpadMonitors } from './monitors/launchpads';
 import { startDistributionMonitor } from './watchlist/distributionMonitor';
 import { startMetaplexMonitor }     from './monitors/metaplex';
+import { startDiscordMonitor }      from './monitors/discord';
+import { startVestingMonitor }      from './monitors/vesting';
 
 async function main() {
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
@@ -47,6 +49,12 @@ async function main() {
 
   // ── Metaplex monitor — catches all tokens with metadata regardless of platform
   startMetaplexMonitor(connection);
+
+  // ── Discord monitor — watches for CA drops in Discord channels
+  if (config.monitors.discord) startDiscordMonitor();
+
+  // ── Vesting monitor — fires when team tokens are locked just before launch
+  if (config.monitors.vesting) startVestingMonitor(connection);
 
   // ── Distribution monitor (Stage 2 + 3) ─────────────────────────────────────
   startDistributionMonitor(connection);
@@ -75,6 +83,8 @@ function buildConfigSummary(): string {
     `  Traditional:  ${monitors.traditional ? '✓' : '✗'}`,
     `  Raydium:      ${monitors.raydium     ? '✓' : '✗'}`,
     `  Launchpads:   ${monitors.launchpads  ? '✓' : '✗'}`,
+    `  Discord:      ${monitors.discord     ? '✓' : '✗'}`,
+    `  Vesting:      ${monitors.vesting     ? '✓' : '✗'}`,
     '',
     '── Filters ──────────────────────────────────────',
     `  Require socials:  ${filters.requireSocials}`,

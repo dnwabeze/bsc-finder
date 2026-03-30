@@ -59,6 +59,8 @@ export const config = {
     traditional: bool('MONITOR_TRADITIONAL', true),
     raydium:     bool('MONITOR_RAYDIUM',     true),
     launchpads:  bool('MONITOR_LAUNCHPADS',  true),
+    discord:     bool('MONITOR_DISCORD',     false),
+    vesting:     bool('MONITOR_VESTING',     false),
   },
   filters: {
     requireSocials:   bool('REQUIRE_SOCIALS', false),
@@ -69,6 +71,22 @@ export const config = {
     // Supply in human units (e.g. 1000000000 = 1B). Leave null to disable.
     minSupply:        optionalNumber('FILTER_MIN_SUPPLY'),
     maxSupply:        optionalNumber('FILTER_MAX_SUPPLY'),
+  },
+  // ── Discord Monitor ──────────────────────────────────────────────────────────
+  discord: {
+    botToken:   optional('DISCORD_BOT_TOKEN'),
+    // Comma-separated Discord channel IDs to watch for CA drops
+    channelIds: optional('DISCORD_CHANNEL_IDS')
+      .split(',').map(s => s.trim()).filter(Boolean),
+  },
+  // ── Vesting Monitor ──────────────────────────────────────────────────────────
+  vesting: {
+    // Exact total supply to match (human units, e.g. 730000000 = 730M). ±1% tolerance.
+    // Leave empty to fall back to FILTER_MIN/MAX_SUPPLY.
+    exactSupply:   optionalNumber('FILTER_EXACT_SUPPLY'),
+    // Extra vesting program IDs beyond built-in Streamflow
+    extraPrograms: optional('VESTING_PROGRAMS')
+      .split(',').map(s => s.trim()).filter(Boolean),
   },
   distribution: {
     // Pattern: sorted-descending list of target wallet percentages
