@@ -31,7 +31,11 @@ export function passesFilters(token: TokenInfo): boolean {
   const nameMatches = filters.nameKeywords.length > 0 &&
     filters.nameKeywords.some(kw => {
       const kwClean = kw.replace(/\$/g, '');
-      return nameLC.includes(kwClean) || symbolLC.includes(kwClean);
+      // Symbol: exact match only (so "stc" won't match "testcoin" or "breastcoin")
+      const symbolMatch = symbolLC === kwClean;
+      // Name: contains match (so "save the child" matches "save the child token")
+      const nameMatch = nameLC.includes(kwClean);
+      return symbolMatch || nameMatch;
     });
 
   if (nameMatches) {
