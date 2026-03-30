@@ -110,21 +110,18 @@ async function processMint(
   try {
     console.log(`[Traditional] New mint detected: ${mint}`);
 
-    // Get creation signature and creator from the first tx for this mint
+    // Get creation signature and creator — direct RPC call, no queue
     let signature = '';
     let creator: string | undefined;
 
     try {
-      const sigs = await rateLimit(() =>
-        connection.getSignaturesForAddress(new PublicKey(mint), { limit: 1 }, 'confirmed')
-      );
+      const sigs = await connection.getSignaturesForAddress(new PublicKey(mint), { limit: 1 }, 'confirmed');
       if (sigs.length > 0) {
         signature = sigs[0].signature;
-        // Fetch tx only to extract the fee-payer (creator)
-        const tx = await rateLimit(() => connection.getTransaction(signature, {
+        const tx = await connection.getTransaction(signature, {
           maxSupportedTransactionVersion: 0,
           commitment: 'confirmed',
-        }));
+        });
         if (tx) {
           const msg = tx.transaction.message;
           if ('staticAccountKeys' in msg) {

@@ -95,13 +95,13 @@ async function handleMetadataAccount(
 
     console.log(`[Metaplex] ✅ ${preToken.symbol} matched — fetching supply...`);
 
-    // ── Passed filter — now fetch supply, signature, off-chain metadata ──────
+    // ── Matched tokens bypass the shared rate-limiter queue ──────────────────
+    // The queue can be backed up with low-priority requests (Raydium, etc).
+    // For a rare filter match we call RPC directly so the alert fires immediately.
     let decimals = 9; // safe default — won't misidentify as NFT
     let supply   = BigInt(0);
     try {
-      const supplyInfo = await rateLimit(() =>
-        connection.getTokenSupply(new PublicKey(mint), 'confirmed')
-      );
+      const supplyInfo = await connection.getTokenSupply(new PublicKey(mint), 'confirmed');
       decimals = supplyInfo.value.decimals;
       supply   = BigInt(supplyInfo.value.amount);
     } catch (err: any) {
@@ -114,19 +114,17 @@ async function handleMetadataAccount(
       return;
     }
 
-    // Get creator from first tx for this mint
+    // Get creator from first tx for this mint (direct — no rate limiter queue)
     let signature = '';
     let creator: string | undefined;
     try {
-      const sigs = await rateLimit(() =>
-        connection.getSignaturesForAddress(new PublicKey(mint), { limit: 1 }, 'confirmed')
-      );
+      const sigs = await connection.getSignaturesForAddress(new PublicKey(mint), { limit: 1 }, 'confirmed');
       if (sigs.length > 0) {
         signature = sigs[0].signature;
-        const tx = await rateLimit(() => connection.getTransaction(signature, {
+        const tx = await connection.getTransaction(signature, {
           maxSupportedTransactionVersion: 0,
           commitment: 'confirmed',
-        }));
+        });
         if (tx) {
           const msg = tx.transaction.message;
           if ('staticAccountKeys' in msg) {
