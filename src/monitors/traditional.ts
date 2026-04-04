@@ -125,9 +125,18 @@ async function processMint(
     }
 
     // ── Step 2: filter check — drop non-matching tokens before any more RPC ──
+    // If no metadata found, pre-fetch supply so supply-based filters can match
+    // even when the token has no name/symbol yet.
     const preToken: TokenInfo = {
       mint, name, symbol, source: 'traditional', signature: '', timestamp: Date.now(),
     };
+    if (name === 'Unknown') {
+      try {
+        const supplyInfo = await connection.getTokenSupply(new PublicKey(mint), 'confirmed');
+        preToken.supply   = BigInt(supplyInfo.value.amount);
+        preToken.decimals = supplyInfo.value.decimals;
+      } catch { /* non-fatal — filter will just skip supply check */ }
+    }
     if (!passesFilters(preToken)) {
       console.log(`[Traditional] Filtered out: ${symbol}`);
       return;
