@@ -376,17 +376,32 @@ async function checkLpExists(tokenAddress: string): Promise<boolean> {
 
 // ── Build and send Telegram alert (initial or update) ────────────────────────
 async function sendStealthAlert(state: TrackedToken): Promise<void> {
-  const supplyHuman  = Number(state.totalSupplyRaw) / Math.pow(10, state.decimals);
-  const isUpdate     = state.lastAlertedCount > config.bsc.stealthMinWallets;
-  const headerEmoji  = isUpdate ? '🔄' : '🚨';
-  const headerLabel  = isUpdate ? 'UPDATE — NEW WALLETS FUNDED' : 'PRE-DISTRIBUTION DETECTED';
-  const walletNote   = state.recipients.size > 5 ? `\n⚡ _Multisender detected — ${state.recipients.size} wallets funded so far_` : '';
+  const supplyHuman = Number(state.totalSupplyRaw) / Math.pow(10, state.decimals);
+  const isUpdate    = state.lastAlertedCount > config.bsc.stealthMinWallets;
+  const headerEmoji = isUpdate ? '🔄' : '🚨';
+  const headerLabel = isUpdate ? 'UPDATE — NEW WALLETS FUNDED' : 'PRE-DISTRIBUTION DETECTED';
+  const walletNote  = state.recipients.size > 5 ? `\n⚡ _Multisender detected — ${state.recipients.size} wallets funded so far_` : '';
 
-  const walletLines = [...state.recipients.entries()].map(([addr, amt], i) => {
-    const humanAmt = Number(amt) / Math.pow(10, state.decimals);
-    const pct      = supplyHuman > 0 ? (humanAmt / supplyHuman) * 100 : 0;
-    return `  ${i + 1}. \`${addr}\` → ${formatNum(humanAmt)} (${pct.toFixed(2)}%)`;
+  // Fetch CURRENT balances for every recipient wallet — historical transfer amounts
+  // can be stale (wallets may have already moved or sold tokens since distribution).
+  const tokenContract = new ethers.Contract(state.address, ERC20_ABI, httpProvider);
+  const walletAddrs   = [...state.recipients.keys()];
+  const liveBalances  = await Promise.all(
+    walletAddrs.map(addr => tokenContract.balanceOf(addr).catch(() => 0n)),
+  );
+
+  const walletLines = walletAddrs.map((addr, i) => {
+    const bal      = liveBalances[i] as bigint;
+    const humanBal = Number(bal) / Math.pow(10, state.decimals);
+    const pct      = supplyHuman > 0 ? (humanBal / supplyHuman) * 100 : 0;
+    const status   = humanBal === 0 ? ' ⚠️ _sold/moved_' : '';
+    return `  ${i + 1}. \`${addr}\` → ${formatNum(humanBal)} (${pct.toFixed(2)}%)${status}`;
   }).join('\n');
+
+  // Deployer's remaining balance
+  const deployerBalRaw  = await tokenContract.balanceOf(state.deployer).catch(() => 0n) as bigint;
+  const deployerBal     = Number(deployerBalRaw) / Math.pow(10, state.decimals);
+  const deployerPct     = supplyHuman > 0 ? (deployerBal / supplyHuman) * 100 : 0;
 
   const ca = state.address;
 
@@ -397,11 +412,11 @@ async function sendStealthAlert(state: TrackedToken): Promise<void> {
     `🪙 *Name:*   ${esc(state.name)}`,
     `🔤 *Symbol:* ${esc(state.symbol)}`,
     `📍 *CA:* \`${ca}\``,
-    `👤 *Deployer:* \`${state.deployer}\``,
+    `👤 *Deployer:* \`${state.deployer}\` holds ${formatNum(deployerBal)} (${deployerPct.toFixed(2)}%)`,
     ``,
     `📊 *Total Supply:* ${formatNum(supplyHuman)}`,
     ``,
-    `📤 *Funded Wallets (${state.recipients.size}):*`,
+    `📤 *Funded Wallets (${state.recipients.size}) — live balances:*`,
     walletLines,
     walletNote,
     ``,
