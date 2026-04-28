@@ -26,6 +26,9 @@ const FACTORY_ABI = [
   'function getPair(address tokenA, address tokenB) view returns (address pair)',
 ];
 
+// Used to detect LP pair tokens — they implement token0(), regular ERC20s don't
+const PAIR_ABI = ['function token0() view returns (address)'];
+
 // ── State ──────────────────────────────────────────────────────────────────────
 interface TrackedToken {
   address: string;
@@ -154,6 +157,14 @@ async function handleMintLog(log: ethers.Log, isLookback: boolean): Promise<void
 
   if (deployer.toLowerCase() === ethers.ZeroAddress.toLowerCase()) return;
   if (mintedAmount === 0n) return;
+
+  // Skip LP pair tokens — they emit Transfer(0x0, ...) on every liquidity add.
+  // Pair contracts implement token0(); regular ERC20s do not.
+  try {
+    const pairCheck = new ethers.Contract(tokenAddress, PAIR_ABI, httpProvider);
+    await pairCheck.token0();
+    return; // it's a Cake-LP or any Uniswap-style pair token — skip
+  } catch { /* not a pair contract — proceed */ }
 
   // Fetch ERC20 metadata
   const tokenContract = new ethers.Contract(tokenAddress, ERC20_ABI, httpProvider);
