@@ -227,7 +227,7 @@ async function handleMintLog(log: ethers.Log, isLookback: boolean): Promise<void
     expiresAt,
   });
 
-  console.log(`[BSC/StealthDeployer] Tracking: ${name} (${symbol}) CA: ${tokenAddress}`);
+  console.log(`[BSC/StealthDeployer] ${isLookback ? '[LOOKBACK]' : '[LIVE]'} Tracking: ${name} (${symbol}) CA: ${tokenAddress}`);
 
   // For lookback tokens: scan existing Transfer history first, then start polling
   if (isLookback) {
