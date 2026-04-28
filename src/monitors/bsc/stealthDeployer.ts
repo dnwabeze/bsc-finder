@@ -173,17 +173,27 @@ async function handleMintLog(log: ethers.Log, isLookback: boolean): Promise<void
 
   // Fetch ERC20 metadata
   const tokenContract = new ethers.Contract(tokenAddress, ERC20_ABI, httpProvider);
-  let name = 'Unknown', symbol = 'Unknown', decimals = 18;
+  let name = 'Unknown', symbol = 'Unknown', decimals = 18, totalSupplyOnChain = 0n;
   try {
-    const [n, s, d] = await Promise.all([
+    const [n, s, d, ts] = await Promise.all([
       tokenContract.name().catch(() => 'Unknown'),
       tokenContract.symbol().catch(() => 'Unknown'),
       tokenContract.decimals().catch(() => 18n),
+      tokenContract.totalSupply().catch(() => 0n),
     ]);
-    name     = n as string;
-    symbol   = s as string;
-    decimals = Number(d);
+    name               = n as string;
+    symbol             = s as string;
+    decimals           = Number(d);
+    totalSupplyOnChain = ts as bigint;
   } catch { /* ignore — token might not be ERC20 */ }
+
+  // Skip if this mint only covers a fraction of the total supply.
+  // A real stealth ERC20 mints 100% to the deployer in one shot.
+  // Stablecoins and DeFi vaults mint in batches so mintedAmount << totalSupply.
+  if (totalSupplyOnChain > 0n) {
+    const mintPct = Number(mintedAmount) / Number(totalSupplyOnChain);
+    if (mintPct < 0.95) return; // less than 95% of supply in this single mint → skip
+  }
 
   const supplyHuman = Number(mintedAmount) / Math.pow(10, decimals);
 
@@ -203,7 +213,7 @@ async function handleMintLog(log: ethers.Log, isLookback: boolean): Promise<void
     deployer:         deployer.toLowerCase(),
     name,
     symbol,
-    totalSupplyRaw:   mintedAmount,
+    totalSupplyRaw:   totalSupplyOnChain > 0n ? totalSupplyOnChain : mintedAmount,
     decimals,
     mintTxHash:       log.transactionHash,
     mintBlock,
