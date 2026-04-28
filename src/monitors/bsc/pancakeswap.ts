@@ -3,6 +3,7 @@ import { config } from '../../config';
 import { sendStatusMessage } from '../../notifiers/telegram';
 import { getBnbPriceUsd } from './bnbPrice';
 import { initBuyWatcher, watchPairForBuys } from './buyWatcher';
+import { onWsConnect } from './wsProvider';
 
 // ── Known addresses ────────────────────────────────────────────────────────────
 const PANCAKESWAP_V2_FACTORY = '0xcA143Ce32Fe78f1f7019d7d551a6402fC5350c73';
@@ -32,74 +33,39 @@ const ERC20_ABI = [
 
 // ── Module state ───────────────────────────────────────────────────────────────
 let httpProvider: ethers.JsonRpcProvider;
-let reconnecting = false;
-let reconnectDelay = 5_000;
-const MAX_RECONNECT_DELAY = 120_000;
+let currentFactory: ethers.Contract | null = null;
 
 // ── Entry point ────────────────────────────────────────────────────────────────
 export function startPancakeswapMonitor(): void {
   console.log('[BSC/PancakeSwap] Starting monitor...');
   httpProvider = new ethers.JsonRpcProvider(config.bsc.rpcEndpoint);
   initBuyWatcher();
-  connect();
+  onWsConnect(subscribe);
 }
 
-// ── WebSocket connection with auto-reconnect ───────────────────────────────────
-function connect(): void {
-  try {
-    const wsProvider = new ethers.WebSocketProvider(config.bsc.wsEndpoint);
-    const factory = new ethers.Contract(PANCAKESWAP_V2_FACTORY, FACTORY_ABI, wsProvider);
-
-    factory.on('PairCreated', async (...args: any[]) => {
-      const event  = args[args.length - 1] as ethers.ContractEventPayload;
-      const token0 = args[0] as string;
-      const token1 = args[1] as string;
-      const pair   = args[2] as string;
-      try {
-        await handlePairCreated(token0, token1, pair, event.log.transactionHash);
-      } catch (err: any) {
-        console.error('[BSC/PancakeSwap] Handler error:', err?.message);
-      }
-    });
-
-    // Hook WebSocket close for reconnect
-    const ws: any = (wsProvider as any)._websocket ?? (wsProvider as any).websocket;
-    if (ws) {
-      const onClose = () => {
-        factory.removeAllListeners();
-        scheduleReconnect();
-      };
-      if (typeof ws.on === 'function') {
-        ws.on('close', onClose);
-        ws.on('error', (e: any) => {
-          const msg = e?.message ?? String(e);
-          console.error('[BSC/PancakeSwap] WS error:', msg);
-          if (msg.includes('429')) scheduleReconnect(true);
-        });
-      } else if (typeof ws.addEventListener === 'function') {
-        ws.addEventListener('close', onClose);
-      }
-    }
-
-    reconnectDelay = 5_000; // reset backoff on successful connect
-    console.log('[BSC/PancakeSwap] Listening for PairCreated events...');
-  } catch (err: any) {
-    console.error('[BSC/PancakeSwap] Connection failed:', err?.message);
-    scheduleReconnect();
+// ── Subscribe on the shared WS provider (called on every connect/reconnect) ───
+function subscribe(wsProvider: ethers.WebSocketProvider): void {
+  if (currentFactory) {
+    currentFactory.removeAllListeners();
+    currentFactory = null;
   }
-}
 
-function scheduleReconnect(rateLimited = false): void {
-  if (reconnecting) return;
-  reconnecting = true;
-  // On 429, enforce a minimum 30s cooldown before backing off from there
-  const delay = rateLimited ? Math.max(reconnectDelay, 30_000) : reconnectDelay;
-  reconnectDelay = Math.min(delay * 2, MAX_RECONNECT_DELAY);
-  console.warn(`[BSC/PancakeSwap] WebSocket closed — reconnecting in ${delay / 1000}s...`);
-  setTimeout(() => {
-    reconnecting = false;
-    connect();
-  }, delay);
+  const factory = new ethers.Contract(PANCAKESWAP_V2_FACTORY, FACTORY_ABI, wsProvider);
+  currentFactory = factory;
+
+  factory.on('PairCreated', async (...args: any[]) => {
+    const event  = args[args.length - 1] as ethers.ContractEventPayload;
+    const token0 = args[0] as string;
+    const token1 = args[1] as string;
+    const pair   = args[2] as string;
+    try {
+      await handlePairCreated(token0, token1, pair, event.log.transactionHash);
+    } catch (err: any) {
+      console.error('[BSC/PancakeSwap] Handler error:', err?.message);
+    }
+  });
+
+  console.log('[BSC/PancakeSwap] Listening for PairCreated events...');
 }
 
 // ── Main detection pipeline ────────────────────────────────────────────────────

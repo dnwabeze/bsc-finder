@@ -1,6 +1,7 @@
 import { ethers } from 'ethers';
 import { config } from '../../config';
 import { sendStatusMessage } from '../../notifiers/telegram';
+import { onWsConnect } from './wsProvider';
 
 // ── Addresses ──────────────────────────────────────────────────────────────────
 const PANCAKESWAP_V2_FACTORY = '0xcA143Ce32Fe78f1f7019d7d551a6402fC5350c73';
@@ -49,11 +50,7 @@ interface TrackedToken {
 const tracked = new Map<string, TrackedToken>(); // lowercase tokenAddress → state
 
 let httpProvider: ethers.JsonRpcProvider;
-let wsProvider: ethers.WebSocketProvider;
 let factory: ethers.Contract;
-let reconnecting = false;
-let reconnectDelay = 5_000;
-const MAX_RECONNECT_DELAY = 120_000;
 
 // ── Entry point ────────────────────────────────────────────────────────────────
 export function startBscStealthDeployerMonitor(): void {
@@ -61,12 +58,28 @@ export function startBscStealthDeployerMonitor(): void {
   httpProvider = new ethers.JsonRpcProvider(config.bsc.rpcEndpoint);
   factory = new ethers.Contract(PANCAKESWAP_V2_FACTORY, FACTORY_ABI, httpProvider);
 
-  // Connect immediately so real-time watching starts right away,
-  // then run the lookback in the background without blocking startup.
-  connect();
+  onWsConnect(subscribe);
+
+  // Run lookback in the background without blocking startup.
   runLookback().catch(err =>
     console.error('[BSC/StealthDeployer] Lookback error:', err?.message),
   );
+}
+
+// ── Subscribe on the shared WS provider (called on every connect/reconnect) ───
+function subscribe(wsProvider: ethers.WebSocketProvider): void {
+  wsProvider.on(
+    { topics: [TRANSFER_TOPIC, ZERO_TOPIC] },
+    async (log: ethers.Log) => {
+      try {
+        await handleMintLog(log, false);
+      } catch (err: any) {
+        console.error('[BSC/StealthDeployer] Mint handler error:', err?.message);
+      }
+    },
+  );
+
+  console.log('[BSC/StealthDeployer] Listening for new mints...');
 }
 
 // ── Lookback: scan last N hours of blocks for mint events ──────────────────────
@@ -98,55 +111,6 @@ async function runLookback(): Promise<void> {
 
   const activeCount = [...tracked.values()].filter(t => !t.cancelled).length;
   console.log(`[BSC/StealthDeployer] Lookback complete — tracking ${activeCount} token(s) without LP.`);
-}
-
-// ── WebSocket connection with auto-reconnect ───────────────────────────────────
-function connect(): void {
-  try {
-    wsProvider = new ethers.WebSocketProvider(config.bsc.wsEndpoint);
-
-    // Subscribe to ALL Transfer(address(0), ...) logs across all BSC contracts
-    wsProvider.on(
-      { topics: [TRANSFER_TOPIC, ZERO_TOPIC] },
-      async (log: ethers.Log) => {
-        try {
-          await handleMintLog(log, false);
-        } catch (err: any) {
-          console.error('[BSC/StealthDeployer] Mint handler error:', err?.message);
-        }
-      },
-    );
-
-    const ws: any = (wsProvider as any)._websocket ?? (wsProvider as any).websocket;
-    if (ws) {
-      const onClose = () => scheduleReconnect();
-      if (typeof ws.on === 'function') {
-        ws.on('close', onClose);
-        ws.on('error', (e: any) => {
-          const msg = e?.message ?? String(e);
-          console.error('[BSC/StealthDeployer] WS error:', msg);
-          if (msg.includes('429')) scheduleReconnect(true);
-        });
-      } else if (typeof ws.addEventListener === 'function') {
-        ws.addEventListener('close', onClose);
-      }
-    }
-
-    reconnectDelay = 5_000; // reset backoff on successful connect
-    console.log('[BSC/StealthDeployer] Listening for new mints...');
-  } catch (err: any) {
-    console.error('[BSC/StealthDeployer] Connection failed:', err?.message);
-    scheduleReconnect();
-  }
-}
-
-function scheduleReconnect(rateLimited = false): void {
-  if (reconnecting) return;
-  reconnecting = true;
-  const delay = rateLimited ? Math.max(reconnectDelay, 30_000) : reconnectDelay;
-  reconnectDelay = Math.min(delay * 2, MAX_RECONNECT_DELAY);
-  console.warn(`[BSC/StealthDeployer] WebSocket closed — reconnecting in ${delay / 1000}s...`);
-  setTimeout(() => { reconnecting = false; connect(); }, delay);
 }
 
 // ── Handle a Transfer(0x0 → deployer) mint log ────────────────────────────────

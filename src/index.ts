@@ -26,6 +26,7 @@ import { startDiscordMonitor }      from './monitors/discord';
 import { startVestingMonitor }      from './monitors/vesting';
 import { startPancakeswapMonitor }      from './monitors/bsc/pancakeswap';
 import { startBscStealthDeployerMonitor } from './monitors/bsc/stealthDeployer';
+import { connectBscWs }                   from './monitors/bsc/wsProvider';
 
 async function main() {
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
@@ -58,10 +59,9 @@ async function main() {
   // ── Vesting monitor — fires when team tokens are locked just before launch
   if (config.monitors.vesting) startVestingMonitor(connection);
 
-  // ── BSC/PancakeSwap monitor ─────────────────────────────────────────────────
+  // ── BSC monitors — share a single WebSocket connection ─────────────────────
+  if (config.bsc.pancakeswap || config.bsc.stealthDeployer) connectBscWs();
   if (config.bsc.pancakeswap) startPancakeswapMonitor();
-
-  // ── BSC Stealth pre-distribution detector ───────────────────────────────────
   if (config.bsc.stealthDeployer) startBscStealthDeployerMonitor();
 
   // ── Distribution monitor (Stage 2 + 3) — only needed when Solana monitors are active
