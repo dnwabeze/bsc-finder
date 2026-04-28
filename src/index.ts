@@ -24,6 +24,7 @@ import { startDistributionMonitor } from './watchlist/distributionMonitor';
 import { startMetaplexMonitor }     from './monitors/metaplex';
 import { startDiscordMonitor }      from './monitors/discord';
 import { startVestingMonitor }      from './monitors/vesting';
+import { startPancakeswapMonitor }  from './monitors/bsc/pancakeswap';
 
 async function main() {
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
@@ -48,7 +49,7 @@ async function main() {
   if (config.monitors.launchpads)  startLaunchpadMonitors(connection);
 
   // ── Metaplex monitor — catches all tokens with metadata regardless of platform
-  startMetaplexMonitor(connection);
+  if (config.monitors.metaplex) startMetaplexMonitor(connection);
 
   // ── Discord monitor — watches for CA drops in Discord channels
   if (config.monitors.discord) startDiscordMonitor();
@@ -56,8 +57,14 @@ async function main() {
   // ── Vesting monitor — fires when team tokens are locked just before launch
   if (config.monitors.vesting) startVestingMonitor(connection);
 
-  // ── Distribution monitor (Stage 2 + 3) ─────────────────────────────────────
-  startDistributionMonitor(connection);
+  // ── BSC/PancakeSwap monitor ─────────────────────────────────────────────────
+  if (config.bsc.pancakeswap) startPancakeswapMonitor();
+
+  // ── Distribution monitor (Stage 2 + 3) — only needed when Solana monitors are active
+  const anySolanaActive = config.monitors.pumpfun || config.monitors.traditional ||
+    config.monitors.raydium || config.monitors.launchpads ||
+    config.monitors.metaplex || config.monitors.discord || config.monitors.vesting;
+  if (anySolanaActive) startDistributionMonitor(connection);
 
   // ── Print active config summary ─────────────────────────────────────────────
   const summary = buildConfigSummary();
@@ -74,60 +81,93 @@ async function main() {
 }
 
 function buildConfigSummary(): string {
-  const { filters, distribution, monitors } = config;
+  const { monitors, bsc } = config;
 
   const lines = [
     '',
     '── Active Monitors ──────────────────────────────',
-    `  Pump.fun:     ${monitors.pumpfun     ? '✓' : '✗'}`,
-    `  Traditional:  ${monitors.traditional ? '✓' : '✗'}`,
-    `  Raydium:      ${monitors.raydium     ? '✓' : '✗'}`,
-    `  Launchpads:   ${monitors.launchpads  ? '✓' : '✗'}`,
-    `  Discord:      ${monitors.discord     ? '✓' : '✗'}`,
-    `  Vesting:      ${monitors.vesting     ? '✓' : '✗'}`,
-    '',
-    '── Filters ──────────────────────────────────────',
-    `  Require socials:  ${filters.requireSocials}`,
-    `  Name keywords:    ${filters.nameKeywords.length > 0 ? filters.nameKeywords.join(', ') : '(all tokens)'}`,
-    `  Twitter keywords: ${filters.twitterKeywords.join(', ') || '(any)'}`,
-    `  Telegram keywords: ${filters.telegramKeywords.join(', ') || '(any)'}`,
-    '',
-    '── Distribution ─────────────────────────────────',
-    `  Stage 2 at:  ${distribution.stage2MinHolders} holders`,
-    `  Pattern:     ${distribution.pattern.length > 0 ? `[${distribution.pattern.join(', ')}]% ±${distribution.tolerance}%` : '(not set)'}`,
-    `  Poll every:  ${distribution.pollIntervalMs / 1000}s`,
-    `  Watch for:   ${distribution.watchDurationMs / 3600000}h`,
-    '─────────────────────────────────────────────────',
-    '',
+    `  Pump.fun:        ${monitors.pumpfun     ? '✓' : '✗'}`,
+    `  Traditional:     ${monitors.traditional ? '✓' : '✗'}`,
+    `  Raydium:         ${monitors.raydium     ? '✓' : '✗'}`,
+    `  Launchpads:      ${monitors.launchpads  ? '✓' : '✗'}`,
+    `  Metaplex:        ${monitors.metaplex    ? '✓' : '✗'}`,
+    `  Discord:         ${monitors.discord     ? '✓' : '✗'}`,
+    `  Vesting:         ${monitors.vesting     ? '✓' : '✗'}`,
+    `  BSC/PancakeSwap: ${bsc.pancakeswap      ? '✓' : '✗'}`,
   ];
 
+  if (bsc.pancakeswap) {
+    lines.push(
+      '',
+      '── BSC Filters ──────────────────────────────────',
+      `  Supply:      ${bsc.supplyMin !== null ? `${(bsc.supplyMin / 1e6).toFixed(0)}M` : '—'} – ${bsc.supplyMax !== null ? `${(bsc.supplyMax / 1e9).toFixed(0)}B` : '—'} tokens`,
+      `  LP %:        ${bsc.lpPctMin ?? '—'}% – ${bsc.lpPctMax ?? '—'}%`,
+      `  LP USD:      $${bsc.lpUsdMin ?? '—'} – $${bsc.lpUsdMax ?? '—'}`,
+      `  Market cap:  $${bsc.mcapUsdMin ?? '—'} – $${bsc.mcapUsdMax ?? '—'}`,
+      `  Holder %:    ${bsc.holderPctMin !== null || bsc.holderPctMax !== null ? `${bsc.holderPctMin ?? '—'}% – ${bsc.holderPctMax ?? '—'}%` : 'off'}`,
+      '',
+      '── BSC Buy Watcher ──────────────────────────────',
+      `  Watch duration: ${bsc.buyWatchDurationMs / 60000} min per token`,
+      `  Min buy size:   ${bsc.buyAlertMinUsd !== null ? `$${bsc.buyAlertMinUsd}` : 'all buys'}`,
+    );
+  }
+
+  const anySolana = monitors.pumpfun || monitors.traditional || monitors.raydium ||
+    monitors.launchpads || monitors.metaplex || monitors.discord || monitors.vesting;
+
+  if (anySolana) {
+    const { filters, distribution } = config;
+    lines.push(
+      '',
+      '── Solana Filters ───────────────────────────────',
+      `  Require socials:  ${filters.requireSocials}`,
+      `  Name keywords:    ${filters.nameKeywords.length > 0 ? filters.nameKeywords.join(', ') : '(all tokens)'}`,
+      `  Twitter keywords: ${filters.twitterKeywords.join(', ') || '(any)'}`,
+      '',
+      '── Distribution ─────────────────────────────────',
+      `  Stage 2 at:  ${distribution.stage2MinHolders} holders`,
+      `  Pattern:     ${distribution.pattern.length > 0 ? `[${distribution.pattern.join(', ')}]% ±${distribution.tolerance}%` : '(not set)'}`,
+      `  Poll every:  ${distribution.pollIntervalMs / 1000}s`,
+      `  Watch for:   ${distribution.watchDurationMs / 3600000}h`,
+    );
+  }
+
+  lines.push('─────────────────────────────────────────────────', '');
   return lines.join('\n');
 }
 
 function telegramSummary(): string {
-  const { filters, distribution, monitors } = config;
-  const active = [
-    monitors.pumpfun     ? 'Pump\\.fun' : '',
-    monitors.traditional ? 'SPL Token' : '',
-    monitors.raydium     ? 'Raydium'   : '',
-    monitors.launchpads  ? 'Other Launchpads' : '',
-  ].filter(Boolean).join(', ');
+  const { monitors, bsc } = config;
 
-  const nameFilter = filters.nameKeywords.length > 0
-    ? filters.nameKeywords.join(', ')
-    : '_all tokens_';
+  const solanaActive = [
+    monitors.pumpfun     ? 'Pump\\.fun'       : '',
+    monitors.traditional ? 'Traditional SPL'  : '',
+    monitors.raydium     ? 'Raydium'          : '',
+    monitors.launchpads  ? 'Launchpads'       : '',
+    monitors.metaplex    ? 'Metaplex'         : '',
+    monitors.discord     ? 'Discord'          : '',
+    monitors.vesting     ? 'Vesting'          : '',
+  ].filter(Boolean);
 
-  const distPattern = distribution.pattern.length > 0
-    ? `\`[${distribution.pattern.join(', ')}]%\` ±${distribution.tolerance}%`
-    : '_not set_';
+  const lines: string[] = [];
 
-  return [
-    `*Monitors:* ${active}`,
-    `*Name filter:* ${nameFilter}`,
-    `*Socials required:* ${filters.requireSocials ? 'Yes' : 'No'}`,
-    `*Distribution pattern:* ${distPattern}`,
-    `*Stage 2 threshold:* ${distribution.stage2MinHolders} holders`,
-  ].join('\n');
+  if (bsc.pancakeswap) {
+    lines.push(`🟡 *BSC/PancakeSwap* — Active`);
+    lines.push(`  Supply: ${bsc.supplyMin !== null ? `${(bsc.supplyMin / 1e6).toFixed(0)}M` : '—'} – ${bsc.supplyMax !== null ? `${(bsc.supplyMax / 1e9).toFixed(0)}B` : '—'}`);
+    lines.push(`  LP %: ${bsc.lpPctMin ?? '—'}% – ${bsc.lpPctMax ?? '—'}%`);
+    lines.push(`  LP USD: $${bsc.lpUsdMin ?? '—'} – $${bsc.lpUsdMax ?? '—'}`);
+    lines.push(`  Market cap: $${bsc.mcapUsdMin ?? '—'} – $${bsc.mcapUsdMax ?? '—'}`);
+    lines.push(`  Holder filter: ${bsc.holderPctMin !== null || bsc.holderPctMax !== null ? `${bsc.holderPctMin ?? '—'}% – ${bsc.holderPctMax ?? '—'}%` : 'off'}`);
+    lines.push(`  Buy alerts: on \\(watching ${(bsc.buyWatchDurationMs / 60000).toFixed(0)} min per token\\)`);
+  }
+
+  if (solanaActive.length > 0) {
+    lines.push(`🟢 *Solana* — ${solanaActive.join(', ')}`);
+  }
+
+  if (lines.length === 0) lines.push('⚠️ No monitors active');
+
+  return lines.join('\n');
 }
 
 async function shutdown() {

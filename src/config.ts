@@ -50,6 +50,26 @@ export const config = {
     endpoint:   optional('RPC_ENDPOINT',    'https://api.mainnet-beta.solana.com'),
     wsEndpoint: optional('RPC_WS_ENDPOINT', 'wss://api.mainnet-beta.solana.com'),
   },
+  // ── BSC / BNB Chain ──────────────────────────────────────────────────────────
+  bsc: {
+    rpcEndpoint: optional('BSC_RPC_ENDPOINT', 'https://bsc-dataseed1.binance.org'),
+    wsEndpoint:  optional('BSC_WS_ENDPOINT',  'wss://bsc-ws-node.nariox.org'),
+    pancakeswap: bool('MONITOR_BSC_PANCAKESWAP', false),
+    // Filters (null = disabled)
+    supplyMin:    optionalNumber('FILTER_BSC_SUPPLY_MIN'),
+    supplyMax:    optionalNumber('FILTER_BSC_SUPPLY_MAX'),
+    lpPctMin:     optionalNumber('FILTER_BSC_LP_PCT_MIN'),
+    lpPctMax:     optionalNumber('FILTER_BSC_LP_PCT_MAX'),
+    lpUsdMin:     optionalNumber('FILTER_BSC_LP_USD_MIN'),
+    lpUsdMax:     optionalNumber('FILTER_BSC_LP_USD_MAX'),
+    mcapUsdMin:   optionalNumber('FILTER_BSC_MCAP_USD_MIN'),
+    mcapUsdMax:   optionalNumber('FILTER_BSC_MCAP_USD_MAX'),
+    holderPctMin: optionalNumber('FILTER_BSC_HOLDER_PCT_MIN'),
+    holderPctMax: optionalNumber('FILTER_BSC_HOLDER_PCT_MAX'),
+    // Buy watcher
+    buyWatchDurationMs: parseInt(optional('BSC_BUY_WATCH_DURATION_MS', String(60 * 60 * 1000))),
+    buyAlertMinUsd: optionalNumber('BSC_BUY_ALERT_MIN_USD'),
+  },
   telegram: {
     botToken: required('TELEGRAM_BOT_TOKEN'),
     chatId:   required('TELEGRAM_CHAT_ID'),
@@ -59,6 +79,7 @@ export const config = {
     traditional: bool('MONITOR_TRADITIONAL', true),
     raydium:     bool('MONITOR_RAYDIUM',     true),
     launchpads:  bool('MONITOR_LAUNCHPADS',  true),
+    metaplex:    bool('MONITOR_METAPLEX',    true),
     discord:     bool('MONITOR_DISCORD',     false),
     vesting:     bool('MONITOR_VESTING',     false),
   },
