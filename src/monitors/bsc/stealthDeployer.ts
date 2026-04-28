@@ -197,7 +197,7 @@ async function handleMintLog(log: ethers.Log, isLookback: boolean): Promise<void
   // Stablecoins and DeFi vaults mint in batches so mintedAmount << totalSupply.
   if (totalSupplyOnChain > 0n) {
     const mintPct = Number(mintedAmount) / Number(totalSupplyOnChain);
-    if (mintPct < 0.95) return; // less than 95% of supply in this single mint → skip
+    if (mintPct < 0.95) return;
   }
 
   const supplyHuman = Number(mintedAmount) / Math.pow(10, decimals);
@@ -206,9 +206,17 @@ async function handleMintLog(log: ethers.Log, isLookback: boolean): Promise<void
   if (config.bsc.stealthMinSupply !== null && supplyHuman < config.bsc.stealthMinSupply) return;
   if (config.bsc.stealthMaxSupply !== null && supplyHuman > config.bsc.stealthMaxSupply) return;
 
-  // Skip if LP already exists — existing pancakeswap.ts monitor handles those
+  // Skip if LP already exists
   const hasLp = await checkLpExists(tokenAddress);
   if (hasLp) return;
+
+  // Only track if deployer STILL holds 100% of supply right now (pristine — no distribution yet).
+  // This filters out any token from lookback that has already started distributing.
+  const deployerBalNow = await tokenContract.balanceOf(deployer).catch(() => 0n) as bigint;
+  if (totalSupplyOnChain > 0n) {
+    const deployerHoldsPct = Number(deployerBalNow) / Number(totalSupplyOnChain);
+    if (deployerHoldsPct < 0.99) return; // already moved tokens — skip
+  }
 
   const mintBlock  = typeof log.blockNumber === 'number' ? log.blockNumber : Number(log.blockNumber);
   const expiresAt  = Date.now() + config.bsc.stealthWatchHours * 60 * 60 * 1000;
@@ -228,38 +236,10 @@ async function handleMintLog(log: ethers.Log, isLookback: boolean): Promise<void
     expiresAt,
   });
 
-  console.log(`[BSC/StealthDeployer] ${isLookback ? '[LOOKBACK]' : '[LIVE]'} Tracking: ${name} (${symbol}) CA: ${tokenAddress}`);
+  console.log(`[BSC/StealthDeployer] ${isLookback ? '[LOOKBACK]' : '[LIVE]'} Tracking: ${name} (${symbol}) CA: ${tokenAddress} — deployer holds 100%`);
 
-  // For lookback tokens: scan existing Transfer history first, then start polling
-  if (isLookback) {
-    await scanHistoricalTransfers(tokenAddress);
-  }
-  // Start polling for future deployer→wallet transfers
+  // Deployer holds full supply — start polling for when they begin distributing
   startPolling(tokenAddress);
-}
-
-// ── Scan historical transfers from deployer (lookback tokens) ──────────────────
-async function scanHistoricalTransfers(tokenAddress: string): Promise<void> {
-  const state = tracked.get(tokenAddress);
-  if (!state || state.cancelled) return;
-
-  const tokenContract = new ethers.Contract(tokenAddress, ERC20_ABI, httpProvider);
-  try {
-    const transfers = await tokenContract.queryFilter(
-      tokenContract.filters.Transfer(state.deployer, null),
-      state.mintBlock,
-      'latest',
-    );
-    for (const ev of transfers) {
-      const e   = ev as ethers.EventLog;
-      const to  = (e.args[1] as string).toLowerCase();
-      const val = e.args[2] as bigint;
-      recordTransfer(tokenAddress, to, val);
-    }
-    await maybeAlert(tokenAddress);
-  } catch (err: any) {
-    console.error(`[BSC/StealthDeployer] Historical scan failed for ${tokenAddress}:`, err?.message);
-  }
 }
 
 // ── Poll for new deployer→wallet transfers every 15s ─────────────────────────
