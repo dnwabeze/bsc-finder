@@ -166,6 +166,11 @@ async function handleMintLog(log: ethers.Log, isLookback: boolean): Promise<void
     return; // it's a Cake-LP or any Uniswap-style pair token — skip
   } catch { /* not a pair contract — proceed */ }
 
+  // Skip if the mint recipient is a contract (e.g. dividend trackers, wrapped tokens,
+  // protocol vaults). Real stealth launches mint the full supply to a human wallet (EOA).
+  const deployerCode = await httpProvider.getCode(deployer);
+  if (deployerCode !== '0x') return;
+
   // Fetch ERC20 metadata
   const tokenContract = new ethers.Contract(tokenAddress, ERC20_ABI, httpProvider);
   let name = 'Unknown', symbol = 'Unknown', decimals = 18;
