@@ -52,6 +52,8 @@ let httpProvider: ethers.JsonRpcProvider;
 let wsProvider: ethers.WebSocketProvider;
 let factory: ethers.Contract;
 let reconnecting = false;
+let reconnectDelay = 5_000;
+const MAX_RECONNECT_DELAY = 120_000;
 
 // ── Entry point ────────────────────────────────────────────────────────────────
 export function startBscStealthDeployerMonitor(): void {
@@ -117,18 +119,20 @@ function connect(): void {
 
     const ws: any = (wsProvider as any)._websocket ?? (wsProvider as any).websocket;
     if (ws) {
-      const onClose = () => {
-        console.warn('[BSC/StealthDeployer] WebSocket closed — reconnecting in 5s...');
-        scheduleReconnect();
-      };
+      const onClose = () => scheduleReconnect();
       if (typeof ws.on === 'function') {
         ws.on('close', onClose);
-        ws.on('error', (e: any) => console.error('[BSC/StealthDeployer] WS error:', e?.message));
+        ws.on('error', (e: any) => {
+          const msg = e?.message ?? String(e);
+          console.error('[BSC/StealthDeployer] WS error:', msg);
+          if (msg.includes('429')) scheduleReconnect(true);
+        });
       } else if (typeof ws.addEventListener === 'function') {
         ws.addEventListener('close', onClose);
       }
     }
 
+    reconnectDelay = 5_000; // reset backoff on successful connect
     console.log('[BSC/StealthDeployer] Listening for new mints...');
   } catch (err: any) {
     console.error('[BSC/StealthDeployer] Connection failed:', err?.message);
@@ -136,10 +140,13 @@ function connect(): void {
   }
 }
 
-function scheduleReconnect(): void {
+function scheduleReconnect(rateLimited = false): void {
   if (reconnecting) return;
   reconnecting = true;
-  setTimeout(() => { reconnecting = false; connect(); }, 5000);
+  const delay = rateLimited ? Math.max(reconnectDelay, 30_000) : reconnectDelay;
+  reconnectDelay = Math.min(delay * 2, MAX_RECONNECT_DELAY);
+  console.warn(`[BSC/StealthDeployer] WebSocket closed — reconnecting in ${delay / 1000}s...`);
+  setTimeout(() => { reconnecting = false; connect(); }, delay);
 }
 
 // ── Handle a Transfer(0x0 → deployer) mint log ────────────────────────────────

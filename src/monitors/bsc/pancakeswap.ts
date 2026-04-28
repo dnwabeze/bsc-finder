@@ -33,6 +33,8 @@ const ERC20_ABI = [
 // ── Module state ───────────────────────────────────────────────────────────────
 let httpProvider: ethers.JsonRpcProvider;
 let reconnecting = false;
+let reconnectDelay = 5_000;
+const MAX_RECONNECT_DELAY = 120_000;
 
 // ── Entry point ────────────────────────────────────────────────────────────────
 export function startPancakeswapMonitor(): void {
@@ -64,18 +66,22 @@ function connect(): void {
     const ws: any = (wsProvider as any)._websocket ?? (wsProvider as any).websocket;
     if (ws) {
       const onClose = () => {
-        console.warn('[BSC/PancakeSwap] WebSocket closed — reconnecting in 5s...');
         factory.removeAllListeners();
         scheduleReconnect();
       };
       if (typeof ws.on === 'function') {
         ws.on('close', onClose);
-        ws.on('error', (e: any) => console.error('[BSC/PancakeSwap] WS error:', e?.message));
+        ws.on('error', (e: any) => {
+          const msg = e?.message ?? String(e);
+          console.error('[BSC/PancakeSwap] WS error:', msg);
+          if (msg.includes('429')) scheduleReconnect(true);
+        });
       } else if (typeof ws.addEventListener === 'function') {
         ws.addEventListener('close', onClose);
       }
     }
 
+    reconnectDelay = 5_000; // reset backoff on successful connect
     console.log('[BSC/PancakeSwap] Listening for PairCreated events...');
   } catch (err: any) {
     console.error('[BSC/PancakeSwap] Connection failed:', err?.message);
@@ -83,13 +89,17 @@ function connect(): void {
   }
 }
 
-function scheduleReconnect(): void {
+function scheduleReconnect(rateLimited = false): void {
   if (reconnecting) return;
   reconnecting = true;
+  // On 429, enforce a minimum 30s cooldown before backing off from there
+  const delay = rateLimited ? Math.max(reconnectDelay, 30_000) : reconnectDelay;
+  reconnectDelay = Math.min(delay * 2, MAX_RECONNECT_DELAY);
+  console.warn(`[BSC/PancakeSwap] WebSocket closed — reconnecting in ${delay / 1000}s...`);
   setTimeout(() => {
     reconnecting = false;
     connect();
-  }, 5000);
+  }, delay);
 }
 
 // ── Main detection pipeline ────────────────────────────────────────────────────
