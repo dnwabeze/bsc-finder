@@ -69,6 +69,17 @@ export const config = {
     // Buy watcher
     buyWatchDurationMs: parseInt(optional('BSC_BUY_WATCH_DURATION_MS', String(60 * 60 * 1000))),
     buyAlertMinUsd: optionalNumber('BSC_BUY_ALERT_MIN_USD'),
+    // ── Stealth pre-distribution detector ──────────────────────────────────────
+    stealthDeployer:     bool('MONITOR_BSC_STEALTH', false),
+    // Minimum number of unique wallets funded before alert fires (default: 3)
+    stealthMinWallets:   parseInt(optional('BSC_STEALTH_MIN_WALLETS', '3')),
+    // How many hours back to scan on startup (default: 24)
+    stealthLookbackHours: parseFloat(optional('BSC_STEALTH_LOOKBACK_HOURS', '24')),
+    // Optional supply filter for stealth detector (null = any supply)
+    stealthMinSupply:    optionalNumber('BSC_STEALTH_MIN_SUPPLY'),
+    stealthMaxSupply:    optionalNumber('BSC_STEALTH_MAX_SUPPLY'),
+    // How many hours to keep watching a token that still has no LP (default: 48)
+    stealthWatchHours:   parseFloat(optional('BSC_STEALTH_WATCH_HOURS', '48')),
   },
   telegram: {
     botToken: required('TELEGRAM_BOT_TOKEN'),

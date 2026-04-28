@@ -24,7 +24,8 @@ import { startDistributionMonitor } from './watchlist/distributionMonitor';
 import { startMetaplexMonitor }     from './monitors/metaplex';
 import { startDiscordMonitor }      from './monitors/discord';
 import { startVestingMonitor }      from './monitors/vesting';
-import { startPancakeswapMonitor }  from './monitors/bsc/pancakeswap';
+import { startPancakeswapMonitor }      from './monitors/bsc/pancakeswap';
+import { startBscStealthDeployerMonitor } from './monitors/bsc/stealthDeployer';
 
 async function main() {
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
@@ -60,6 +61,9 @@ async function main() {
   // ── BSC/PancakeSwap monitor ─────────────────────────────────────────────────
   if (config.bsc.pancakeswap) startPancakeswapMonitor();
 
+  // ── BSC Stealth pre-distribution detector ───────────────────────────────────
+  if (config.bsc.stealthDeployer) await startBscStealthDeployerMonitor();
+
   // ── Distribution monitor (Stage 2 + 3) — only needed when Solana monitors are active
   const anySolanaActive = config.monitors.pumpfun || config.monitors.traditional ||
     config.monitors.raydium || config.monitors.launchpads ||
@@ -94,7 +98,19 @@ function buildConfigSummary(): string {
     `  Discord:         ${monitors.discord     ? '✓' : '✗'}`,
     `  Vesting:         ${monitors.vesting     ? '✓' : '✗'}`,
     `  BSC/PancakeSwap: ${bsc.pancakeswap      ? '✓' : '✗'}`,
+    `  BSC/Stealth:     ${bsc.stealthDeployer  ? '✓' : '✗'}`,
   ];
+
+  if (bsc.stealthDeployer) {
+    lines.push(
+      '',
+      '── BSC Stealth Deployer ─────────────────────────',
+      `  Alert at:    ${bsc.stealthMinWallets} wallets funded`,
+      `  Lookback:    ${bsc.stealthLookbackHours}h`,
+      `  Watch for:   ${bsc.stealthWatchHours}h per token`,
+      `  Supply:      ${bsc.stealthMinSupply !== null ? `${(bsc.stealthMinSupply / 1e6).toFixed(0)}M` : '—'} – ${bsc.stealthMaxSupply !== null ? `${(bsc.stealthMaxSupply / 1e9).toFixed(2)}B` : '—'}`,
+    );
+  }
 
   if (bsc.pancakeswap) {
     lines.push(
@@ -150,6 +166,12 @@ function telegramSummary(): string {
   ].filter(Boolean);
 
   const lines: string[] = [];
+
+  if (bsc.stealthDeployer) {
+    lines.push(`🔍 *BSC Stealth Deployer* — Active`);
+    lines.push(`  Alert at: ${bsc.stealthMinWallets} wallets funded \\(no LP yet\\)`);
+    lines.push(`  Lookback: last ${bsc.stealthLookbackHours}h`);
+  }
 
   if (bsc.pancakeswap) {
     lines.push(`🟡 *BSC/PancakeSwap* — Active`);
