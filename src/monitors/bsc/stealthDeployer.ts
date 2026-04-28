@@ -19,6 +19,7 @@ const ERC20_ABI = [
   'function decimals() view returns (uint8)',
   'function name() view returns (string)',
   'function symbol() view returns (string)',
+  'function balanceOf(address) view returns (uint256)',
   'event Transfer(address indexed from, address indexed to, uint256 value)',
 ];
 
