@@ -53,13 +53,17 @@ let factory: ethers.Contract;
 let reconnecting = false;
 
 // ── Entry point ────────────────────────────────────────────────────────────────
-export async function startBscStealthDeployerMonitor(): Promise<void> {
+export function startBscStealthDeployerMonitor(): void {
   console.log('[BSC/StealthDeployer] Starting monitor...');
   httpProvider = new ethers.JsonRpcProvider(config.bsc.rpcEndpoint);
   factory = new ethers.Contract(PANCAKESWAP_V2_FACTORY, FACTORY_ABI, httpProvider);
 
-  await runLookback();
+  // Connect immediately so real-time watching starts right away,
+  // then run the lookback in the background without blocking startup.
   connect();
+  runLookback().catch(err =>
+    console.error('[BSC/StealthDeployer] Lookback error:', err?.message),
+  );
 }
 
 // ── Lookback: scan last N hours of blocks for mint events ──────────────────────

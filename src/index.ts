@@ -62,7 +62,7 @@ async function main() {
   if (config.bsc.pancakeswap) startPancakeswapMonitor();
 
   // ── BSC Stealth pre-distribution detector ───────────────────────────────────
-  if (config.bsc.stealthDeployer) await startBscStealthDeployerMonitor();
+  if (config.bsc.stealthDeployer) startBscStealthDeployerMonitor();
 
   // ── Distribution monitor (Stage 2 + 3) — only needed when Solana monitors are active
   const anySolanaActive = config.monitors.pumpfun || config.monitors.traditional ||
